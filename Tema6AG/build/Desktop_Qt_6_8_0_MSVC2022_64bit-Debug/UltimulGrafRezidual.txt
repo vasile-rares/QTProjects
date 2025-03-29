@@ -1,0 +1,9 @@
+Numar total de muchii: 8
+Start: 1, Finish: 2, Cost: 7, Highlighted: Nu, Edge to: 2
+Start: 2, Finish: 1, Cost: 7, Highlighted: Nu, Edge to: 1
+Start: 1, Finish: 3, Cost: 5, Highlighted: Nu, Edge to: 3
+Start: 3, Finish: 1, Cost: 5, Highlighted: Nu, Edge to: 1
+Start: 1, Finish: 4, Cost: 3, Highlighted: Nu, Edge to: 4
+Start: 4, Finish: 1, Cost: 5, Highlighted: Nu, Edge to: 1
+Start: 6, Finish: 1, Cost: 36, Highlighted: Da, Edge to: 1
+Start: 6, Finish: 4, Cost: 2, Highlighted: Da, Edge to: 4
