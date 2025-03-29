@@ -1,0 +1,370 @@
+#include "node.h"
+
+Node::Node(QPoint pos, int index) : m_pos(pos), m_index(index) {}
+
+Node::~Node() {}
+
+QPoint Node::getPos() const {
+    return m_pos;
+}
+
+int Node::getIndex() const {
+    return m_index;
+}
+
+void Node::setPos(const QPoint &newPos) {
+    m_pos = newPos;
+}
+
+
+#include "edge.h"
+
+Edge::Edge(int first, int second) : m_first(first), m_second(second) {}
+
+Edge::~Edge() {}
+
+int Edge::getFirst() const {
+    return m_first;
+}
+
+int Edge::getSecond() const {
+    return m_second;
+}
+
+void Edge::setFirst(int newFirst) {
+    m_first = newFirst;
+}
+
+void Edge::setSecond(int newSecond) {
+    m_second = newSecond;
+}
+
+
+#include <QFile>
+#include <QTextStream>
+#include <QMessageBox>
+#include <cmath>
+#include <queue>
+#include <QStack>
+#include "Graph.h"
+
+Graph::Graph() {}
+
+Graph::~Graph() {}
+
+QVector<Node>& Graph::getNodes() {
+    return nodes;
+}
+
+QVector<Edge>& Graph::getEdges() {
+    return edges;
+}
+
+bool Graph::isOriented() const {
+    return oriented;
+}
+
+bool Graph::isNodeOverlapping(const QPoint& pos) const {
+    for (const auto& node : nodes) {
+        int dx = node.getPos().x() - pos.x();
+        int dy = node.getPos().y() - pos.y();
+        if (std::sqrt(dx * dx + dy * dy) < 20) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Graph::isDuplicateEdge(const Edge& newEdge) const {
+    for (const auto& edge : edges) {
+        if (edge.getFirst() == newEdge.getFirst() && edge.getSecond() == newEdge.getSecond()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void Graph::addNode(QPoint pos) {
+    if (isNodeOverlapping(pos)) {
+        QMessageBox::warning(nullptr, "Eroare", "Nodul se suprapune cu un alt nod existent.");
+        return;
+    }
+    nodes.append(Node(pos, nodes.size()));
+    saveAdjacencyMatrix();
+}
+
+void Graph::addEdge(int first, int second) {
+    Edge newEdge(first, second);
+    if (!isDuplicateEdge(newEdge)) {
+        edges.append(newEdge);
+        if (!oriented) {
+            edges.append(Edge(second, first));
+        }
+        saveAdjacencyMatrix();
+    } else {
+        QMessageBox::warning(nullptr, "Eroare", "Exista deja acest arc.");
+        return;
+    }
+}
+
+int Graph::getNodeAtPosition(const QPoint &pos) const {
+    for (int i = 0; i < nodes.size(); ++i) {
+        int dx = nodes[i].getPos().x() - pos.x();
+        int dy = nodes[i].getPos().y() - pos.y();
+        if (std::sqrt(dx * dx + dy * dy) <= 10) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void Graph::setGraphOrientation(bool oriented) {
+    this->oriented = oriented;
+    saveAdjacencyMatrix();
+}
+
+void Graph::saveAdjacencyMatrix() {
+    int numNodes = nodes.size();
+    QVector<QVector<int>> adjacencyMatrix(numNodes, QVector<int>(numNodes, 0));
+
+    for (const auto& edge : edges) {
+        adjacencyMatrix[edge.getFirst()][edge.getSecond()] = 1;
+        if (!oriented) {
+            adjacencyMatrix[edge.getSecond()][edge.getFirst()] = 1;
+        }
+    }
+
+    QFile file("matrice_adiacenta.txt");
+    if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&file);
+        out << numNodes << "\n";
+        for (int i = 0; i < numNodes; ++i) {
+            for (int j = 0; j < numNodes; ++j) {
+                out << adjacencyMatrix[i][j] << " ";
+            }
+            out << "\n";
+        }
+        file.close();
+    }
+}
+
+QVector<QVector<int>> Graph::findConnectedComponents() {
+    QVector<bool> visited(nodes.size(), false);
+    QVector<QVector<int>> components;
+
+    for (int i = 0; i < nodes.size(); ++i) {
+        if (!visited[i]) {
+            QVector<int> component;
+            std::queue<int> q;
+            q.push(i);
+            visited[i] = true;
+
+            while (!q.empty()) {
+                int current = q.front();
+                q.pop();
+                component.append(current);
+
+                for (const auto& edge : edges) {
+                    int neighbor = -1;
+                    if (edge.getFirst() == current) {
+                        neighbor = edge.getSecond();
+                    } else if (edge.getSecond() == current) {
+                        neighbor = edge.getFirst();
+                    }
+
+                    if (neighbor != -1 && !visited[neighbor]) {
+                        q.push(neighbor);
+                        visited[neighbor] = true;
+                    }
+                }
+            }
+
+            components.append(component);
+        }
+    }
+    return components;
+}
+
+
+#include "mainwindow.h"
+#include "ui_mainwindow.h"
+
+MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow), selectedNode(-1), draggedNode(-1)  {
+    ui->setupUi(this);
+
+    setFixedSize(800, 600);
+    ui->orientedButton->setChecked(true);
+
+    connect(ui->orientedButton, &QRadioButton::clicked, this, [this]() { graph.setGraphOrientation(true); update(); });
+    connect(ui->unorientedButton, &QRadioButton::clicked, this, [this]() { graph.setGraphOrientation(false); update(); });
+    connect(ui->toggleComponents, &QCheckBox::checkStateChanged, this, &MainWindow::toggleConnectedComponents);
+}
+
+MainWindow::~MainWindow()
+{
+    delete ui;
+}
+
+void MainWindow::paintEvent(QPaintEvent *event) {
+    Q_UNUSED(event);
+    QPainter paint(this);
+    paint.setPen(QPen(Qt::white, 1));
+
+    for (const auto& edge : graph.getEdges()) {
+        const Node& first = graph.getNodes()[edge.getFirst()];
+        const Node& second = graph.getNodes()[edge.getSecond()];
+        QColor edgeColor = Qt::white;
+        if (isDisplayComponents) {
+            int componentIndexFirst = -1;
+            int componentIndexSecond = -1;
+
+            for (int i = 0; i < connectedComponents.size(); ++i) {
+                if (connectedComponents[i].contains(edge.getFirst())) {
+                    componentIndexFirst = i;
+                }
+                if (connectedComponents[i].contains(edge.getSecond())) {
+                    componentIndexSecond = i;
+                }
+            }
+
+            if (componentIndexFirst == componentIndexSecond && componentIndexFirst != -1) {
+                edgeColor = componentColors[componentIndexFirst];
+            }
+        }
+
+        paint.setPen(QPen(edgeColor, 2));
+        paint.drawLine(first.getPos().x(), first.getPos().y(), second.getPos().x(), second.getPos().y());
+        if (graph.isOriented()) {
+            drawArrow(paint, first, second);
+        }
+    }
+
+    if(isDisplayComponents)
+    {
+        for (int i = 0; i < connectedComponents.size(); ++i) {
+            QColor componentColor = componentColors[i];
+            for (const auto& nodeIndex : connectedComponents[i]) {
+                const Node& node = graph.getNodes()[nodeIndex];
+                paint.setBrush(componentColor);
+                paint.setPen(QPen(Qt::white, 2));
+                paint.drawEllipse(node.getPos().x() - 10, node.getPos().y() - 10, 20, 20);
+                paint.setFont(QFont("", 0, QFont::Bold));
+                QRect textRect(node.getPos().x() - 10, node.getPos().y() - 10, 20, 20);
+                paint.drawText(textRect, Qt::AlignCenter | Qt::AlignVCenter, QString::number(node.getIndex() + 1));
+            }
+        }
+    } else {
+        for (const auto& node : graph.getNodes()) {
+            paint.setBrush(Qt::black);
+            paint.setPen(QPen(Qt::white, 2));
+            paint.drawEllipse(node.getPos().x() - 10, node.getPos().y() - 10, 20, 20);
+            paint.setFont(QFont("", 0, QFont::Bold));
+            QRect textRect(node.getPos().x() - 10, node.getPos().y() - 10, 20, 20);
+            paint.drawText(textRect, Qt::AlignCenter | Qt::AlignVCenter, QString::number(node.getIndex() + 1));
+        }
+    }
+}
+
+void MainWindow::mousePressEvent(QMouseEvent *event) {
+    if (event->button() == Qt::RightButton) {
+        graph.addNode(event->pos());
+        connectedComponents = graph.findConnectedComponents();
+        componentColors.append(QColor::fromHsl(rand() % 360, 200, 127));
+        update();
+    } else if (event->button() == Qt::LeftButton) {
+        int clickedNode = graph.getNodeAtPosition(event->pos());
+        if (clickedNode != -1) {
+            draggedNode = clickedNode;
+            if (event->modifiers() & Qt::ShiftModifier) {
+                if (selectedNode == -1) {
+                    selectedNode = clickedNode;
+                } else if (selectedNode != clickedNode) {
+                    graph.addEdge(selectedNode, clickedNode);
+                    connectedComponents = graph.findConnectedComponents();
+                    componentColors.append(QColor::fromHsl(rand() % 360, 200, 127));
+                    selectedNode = -1;
+                }
+            }
+        } else {
+            draggedNode = -1;
+        }
+    }
+    update();
+}
+
+void MainWindow::mouseMoveEvent(QMouseEvent *event) {
+    if (draggedNode != -1) {
+        graph.getNodes()[draggedNode].setPos(event->pos());
+        update();
+    }
+}
+
+void MainWindow::mouseReleaseEvent(QMouseEvent *event) {
+    Q_UNUSED(event);
+    draggedNode = -1;
+    update();
+}
+
+void MainWindow::toggleConnectedComponents(int state)
+{
+    if(state == Qt::Checked) {
+        for (int i = 0; i < connectedComponents.size(); ++i) {
+            qDebug() << "Componenta " << i+1 << ": " << connectedComponents[i];
+        }
+        isDisplayComponents = true;
+    } else {
+        isDisplayComponents = false;
+    }
+    update();
+}
+
+void MainWindow::drawArrow(QPainter &paint, const Node &first, const Node &second) {
+    double dx = second.getPos().x() - first.getPos().x();
+    double dy = second.getPos().y() - first.getPos().y();
+    double length = std::sqrt(dx * dx + dy * dy);
+    double unitDx = dx / length;
+    double unitDy = dy / length;
+
+    int arrowLength = 20;
+    int arrowWidth = 5;
+
+    QPoint arrowP1(second.getPos().x() - arrowLength * unitDx + arrowWidth * unitDy,
+                   second.getPos().y() - arrowLength * unitDy - arrowWidth * unitDx);
+    QPoint arrowP2(second.getPos().x() - arrowLength * unitDx - arrowWidth * unitDy,
+                   second.getPos().y() - arrowLength * unitDy + arrowWidth * unitDx);
+
+    QPoint arrowHead[3] = { QPoint(second.getPos().x(), second.getPos().y()), arrowP1, arrowP2 };
+    paint.setBrush(Qt::white);
+    paint.setPen(Qt::white);
+    paint.drawPolygon(arrowHead, 3);
+}
+
+
+
+#include "mainwindow.h"
+
+#include <QApplication>
+
+int main(int argc, char *argv[])
+{
+    QApplication a(argc, argv);
+    MainWindow w;
+    w.show();
+    return a.exec();
+}
+
+
+1. Sa se afiseze sortarea topologica a unui graf, daca acest lucru este posibil. - 5p
+
+a)	Implementarea parcurgerii in adancime 
+b)	Verificare daca graful are circuite 
+c)	Afisare mesaj in cazul in care graful are circuite 
+d)	Afisarea sortarii topologice intr-un fisier text 
+e)	Desenarea grafului corespunzator sortarii topologice intr-o fereastra noua 
+
+Exemplu:
+
+ 	 
+Graf initial					Sortarea topologica (graf)
+
+Sortarea topologica: 5, 6, 7, 0, 1, 3, 4, 2 (text)
